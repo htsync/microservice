@@ -1,0 +1,14 @@
+{"level":"info","ts":"2024-07-18T18:07:45.363+0700","caller":"cmd/main.go:25","msg":"Starting the application..."}
+{"level":"info","ts":"2024-07-18T18:07:45.363+0700","caller":"cmd/main.go:28","msg":"Connecting to the database..."}
+{"level":"info","ts":"2024-07-18T18:07:45.382+0700","caller":"repository/repository.go:24","msg":"Database connection established."}
+{"level":"info","ts":"2024-07-18T18:07:45.382+0700","caller":"cmd/main.go:33","msg":"Connected to the database successfully."}
+{"level":"info","ts":"2024-07-18T18:07:45.382+0700","caller":"cmd/main.go:36","msg":"Configuring Kafka producer..."}
+{"level":"info","ts":"2024-07-18T18:07:45.398+0700","caller":"cmd/main.go:44","msg":"Kafka producer configured successfully."}
+{"level":"info","ts":"2024-07-18T18:07:45.398+0700","caller":"cmd/main.go:47","msg":"Creating service..."}
+{"level":"info","ts":"2024-07-18T18:07:45.403+0700","caller":"cmd/main.go:49","msg":"Service created successfully."}
+{"level":"info","ts":"2024-07-18T18:07:45.403+0700","caller":"cmd/main.go:52","msg":"Creating handler..."}
+{"level":"info","ts":"2024-07-18T18:07:45.403+0700","caller":"cmd/main.go:54","msg":"Handler created successfully."}
+{"level":"info","ts":"2024-07-18T18:07:45.403+0700","caller":"cmd/main.go:57","msg":"Setting up routes..."}
+{"level":"info","ts":"2024-07-18T18:07:45.403+0700","caller":"cmd/main.go:61","msg":"Routes set up successfully."}
+{"level":"info","ts":"2024-07-18T18:07:45.403+0700","caller":"cmd/main.go:64","msg":"Starting HTTP server on port 8080..."}
+{"level":"info","ts":"2024-07-18T18:08:16.751+0700","caller":"cmd/main.go:82","msg":"Shutting down the application..."}
