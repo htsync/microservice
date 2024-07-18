@@ -2,60 +2,61 @@ package service
 
 import (
 	"context"
-	"errors"
 	"github.com/IBM/sarama"
-	"github.com/go-redis/redis/v8"
-
+	"github.com/htsync/microservice/tree/main/internal/repository"
 	"go.uber.org/zap"
-
-	"github.com/your/module/repository"
 )
 
 type Service struct {
-	repo          repository.Repository
-	kafkaProducer sarama.SyncProducer
-	redisClient   *redis.Client
+	repo          *repository.Repository
+	kafkaProducer sarama.AsyncProducer
 	logger        *zap.Logger
 }
 
-func (s *Service) ProcessMessage(ctx context.Context, content string) (int, error) {
-	id, err := s.repo.SaveMessage(content)
-	if err != nil {
-		return 0, err
+func NewService(repo *repository.Repository, kafkaProducer sarama.AsyncProducer, logger *zap.Logger) *Service {
+	return &Service{repo: repo, kafkaProducer: kafkaProducer, logger: logger}
+}
+
+type Message struct {
+	ID      int    `json:"id"`
+	Content string `json:"content"`
+	Status  string `json:"status"`
+}
+
+type Statistics struct {
+	ProcessedMessages int `json:"processed_messages"`
+}
+
+func (s *Service) ProcessMessage(ctx context.Context, msg *Message) error {
+	s.logger.Info("Processing message", zap.Int("message_id", msg.ID))
+
+	msg.Status = "new"
+	if err := s.repo.SaveMessage(ctx, (*repository.Message)(msg)); err != nil {
+		return err
 	}
 
-	errCh := make(chan error, 1)
+	go s.sendToKafka(ctx, msg)
+	return nil
+}
 
-	go func() {
-		defer close(errCh)
-
-		msg := &sarama.ProducerMessage{
-			Topic: "messages",
-			Value: sarama.StringEncoder(content),
-		}
-
-		_, _, err := s.kafkaProducer.SendMessage(msg)
-		if err != nil {
-			errCh <- err
-			return
-		}
-
-		if err := s.repo.MarkMessageAsProcessed(id); err != nil {
-			errCh <- err
-			return
-		}
-
-		s.logger.Info("Message processed", zap.Int("id", id))
-	}()
-
+func (s *Service) sendToKafka(ctx context.Context, msg *Message) {
 	select {
-	case <-ctx.Done():
-		return 0, errors.New("operation canceled")
-	case err := <-errCh:
-		if err != nil {
-			return 0, err
-		}
+	case s.kafkaProducer.Input() <- &sarama.ProducerMessage{
+		Topic: "messages",
+		Value: sarama.StringEncoder(msg.Content),
+	}:
+		s.logger.Info("Message sent to Kafka", zap.Int("message_id", msg.ID))
+		s.repo.UpdateMessageStatus(ctx, msg.ID, "processed")
+	case err := <-s.kafkaProducer.Errors():
+		s.logger.Error("Failed to send message to Kafka", zap.Error(err))
+		s.repo.UpdateMessageStatus(ctx, msg.ID, "failed")
 	}
+}
 
-	return id, nil
+func (s *Service) GetStatistics(ctx context.Context) (*Statistics, error) {
+	count, err := s.repo.GetProcessedMessagesCount(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &Statistics{ProcessedMessages: count}, nil
 }

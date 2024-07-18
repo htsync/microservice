@@ -1,27 +1,48 @@
 package repository
 
-// Repository определяет контракт для работы с базой данных
-type Repository interface {
-	SaveMessage(content string) (int, error)
-	MarkMessageAsProcessed(id int) error
+import (
+	"context"
+
+	"github.com/jmoiron/sqlx"
+	"go.uber.org/zap"
+)
+
+type Repository struct {
+	db     *sqlx.DB
+	logger *zap.Logger
 }
 
-// PostgreSQLRepository реализует интерфейс Repository для работы с PostgreSQL
-type PostgreSQLRepository struct {
-	// Здесь могут быть добавлены необходимые поля для работы с PostgreSQL
+func NewRepository(db *sqlx.DB, logger *zap.Logger) *Repository {
+	return &Repository{db: db, logger: logger}
 }
 
-func NewPostgreSQLRepository() *PostgreSQLRepository {
-	// Инициализация экземпляра PostgreSQLRepository, если нужно
-	return &PostgreSQLRepository{}
+type Message struct {
+	ID      int    `db:"id"`
+	Content string `db:"content"`
+	Status  string `db:"status"`
 }
 
-func (r *PostgreSQLRepository) SaveMessage(content string) (int, error) {
-	// Логика сохранения сообщения в PostgreSQL
-	return 0, nil
+func (r *Repository) SaveMessage(ctx context.Context, msg *Message) error {
+	_, err := r.db.NamedExecContext(ctx, "INSERT INTO messages (content, status) VALUES (:content, :status)", msg)
+	if err != nil {
+		r.logger.Error("Failed to save message", zap.Error(err))
+	}
+	return err
 }
 
-func (r *PostgreSQLRepository) MarkMessageAsProcessed(id int) error {
-	// Логика пометки сообщения как обработанного в PostgreSQL
-	return nil
+func (r *Repository) UpdateMessageStatus(ctx context.Context, id int, status string) error {
+	_, err := r.db.ExecContext(ctx, "UPDATE messages SET status = $1 WHERE id = $2", status, id)
+	if err != nil {
+		r.logger.Error("Failed to update message status", zap.Error(err))
+	}
+	return err
+}
+
+func (r *Repository) GetProcessedMessagesCount(ctx context.Context) (int, error) {
+	var count int
+	err := r.db.GetContext(ctx, &count, "SELECT COUNT(*) FROM messages WHERE status = 'processed'")
+	if err != nil {
+		r.logger.Error("Failed to get processed messages count", zap.Error(err))
+	}
+	return count, err
 }

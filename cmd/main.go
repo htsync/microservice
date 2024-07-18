@@ -2,117 +2,68 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
-	"github.com/IBM/sarama"
-	"github.com/go-redis/redis/v8"
-	"github.com/gorilla/mux"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/Shopify/sarama"
+	"github.com/htsync/microservice/tree/main/internal/handler"
+	"github.com/htsync/microservice/tree/main/internal/repository"
+	"github.com/htsync/microservice/tree/main/internal/service"
+	"github.com/jmoiron/sqlx"
+	_ "github.com/lib/pq"
 	"go.uber.org/zap"
 )
 
 func main() {
-	// Инициализация логгера
-	logger := initLogger()
+	logger, _ := zap.NewProduction()
 	defer logger.Sync()
 
-	logger.Info("Starting application...")
+	logger.Info("Starting the application")
 
-	// Создание зависимостей
-	dbConnStr := os.Getenv("DB_CONN_STRING")
-	repo, err := initRepository(dbConnStr, logger)
+	db, err := sqlx.Connect("postgres", os.Getenv("DATABASE_URL"))
 	if err != nil {
-		logger.Fatal("Failed to initialize repository", zap.Error(err))
+		logger.Fatal("Failed to connect to the database", zap.Error(err))
 	}
-	logger.Info("Repository initialized")
+	defer db.Close()
 
-	kafkaBrokers := []string{os.Getenv("KAFKA_BROKERS")}
-	kafkaProducer, err := initKafkaProducer(kafkaBrokers, logger)
+	kafkaProducer, err := sarama.NewAsyncProducer([]string{os.Getenv("KAFKA_BROKER")}, nil)
 	if err != nil {
-		logger.Fatal("Failed to initialize Kafka producer", zap.Error(err))
+		logger.Fatal("Failed to create Kafka producer", zap.Error(err))
 	}
-	defer kafkaProducer.Close()
-	logger.Info("Kafka producer initialized")
+	defer kafkaProducer.AsyncClose()
 
-	redisAddr := os.Getenv("REDIS_ADDR")
-	redisClient := initRedisClient(redisAddr, logger)
-	logger.Info("Redis client initialized")
+	repo := repository.NewRepository(db, logger)
+	svc := service.NewService(repo, kafkaProducer, logger)
+	h := handler.NewHandler(svc, logger)
 
-	// Создание сервиса с внедрением зависимостей
-	svc := initService(repo, kafkaProducer, redisClient, logger)
-	logger.Info("Service initialized")
-
-	// Создание HTTP обработчиков с внедрением сервиса
-	r := mux.NewRouter()
-	h := initHandler(svc, logger)
-
-	r.HandleFunc("/message", h.CreateMessage).Methods("POST")
-	r.HandleFunc("/stats", h.GetStats).Methods("GET")
-
-	// Настройка маршрута для метрик Prometheus
-	r.Handle("/metrics", promhttp.Handler())
-
-	// Запуск HTTP сервера
-	httpPort := 8080
 	server := &http.Server{
-		Addr:    fmt.Sprintf(":%d", httpPort),
-		Handler: r,
+		Addr:    ":8080",
+		Handler: h.InitRoutes(),
 	}
 
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Fatal("Failed to start HTTP server", zap.Error(err))
+			logger.Fatal("HTTP server ListenAndServe", zap.Error(err))
 		}
 	}()
 
-	// Ожидание сигнала завершения работы приложения
+	logger.Info("HTTP server started on :8080")
+
 	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	logger.Info("Shutting down server...")
+	logger.Info("Shutting down the server...")
 
-	// Остановка HTTP сервера с таймаутом
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
 	if err := server.Shutdown(ctx); err != nil {
-		logger.Fatal("Failed to gracefully shutdown HTTP server", zap.Error(err))
+		logger.Fatal("Server forced to shutdown", zap.Error(err))
 	}
 
-	logger.Info("Server stopped")
-}
-
-func initLogger() *zap.Logger {
-	// Инициализация логгера
-	config := zap.NewProductionConfig()
-	logger, err := config.Build()
-	if err != nil {
-		log.Fatalf("Failed to create logger: %v", err)
-	}
-	return logger
-}
-
-func initRepository(dbConnStr string, logger *zap.Logger) (repository, error) {
-	// Инициализация репозитория
-}
-
-func initKafkaProducer(brokers []string, logger *zap.Logger) (sarama.SyncProducer, error) {
-	// Инициализация Kafka producer
-}
-
-func initRedisClient(redisAddr string, logger *zap.Logger) *redis.Client {
-	// Инициализация клиента Redis
-}
-
-func initService(repo repository, kafkaProducer sarama.SyncProducer, redisClient *redis.Client, logger *zap.Logger) service {
-	// Инициализация сервиса с внедрением зависимостей
-}
-
-func initHandler(svc service, logger *zap.Logger) handler {
-	// Инициализация HTTP обработчика с внедрением сервиса
+	logger.Info("Server exiting")
 }
