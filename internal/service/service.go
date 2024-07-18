@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"github.com/IBM/sarama"
-	"github.com/htsync/microservice/tree/main/internal/repository"
+	"github.com/htsync/microservice/internal/repository"
 	"go.uber.org/zap"
 )
 

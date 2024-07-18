@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/htsync/microservice/tree/main/internal/service"
+	"github.com/htsync/microservice/internal/service"
 	"go.uber.org/zap"
 )
 
